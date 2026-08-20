@@ -104,6 +104,14 @@ GET http://localhost:8001/result?id=<task_id>
 
 The solver URL is configurable via the `SOLVER` constant in `monster_api.py`.
 
+**Running the solver persistently (screen):**
+
+```bash
+screen -dmS captcha bash -c 'cd /path/to/solver && .venv/bin/python run_captcha_solver.py; exec bash'
+```
+
+**RAM tip:** if self-hosting a browser-pool solver, keep the pool small — `thread: 1, page_count: 2` is enough for a handful of accounts (each solve takes ~4–15 s, re-auth only every 30 min per account). A 3×3 pool wastes ~1 GB RAM on an idle VPS.
+
 ⚠️ **The solver must be running before you start the bot** — otherwise all accounts will show `failed to solve turnstile`.
 
 ## 🎮 Usage

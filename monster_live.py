@@ -72,6 +72,42 @@ def level_up_cost(level, base_rate):
     return math.floor(3 * base_rate * (level ** 1.5))
 
 
+# ─── Cryptomon pump prediction (exact port from JS) ─────────────────
+PUMP_CYCLE_MS = 1_260_000   # 21 min
+PUMP_WINDOW_MS = 60_000     # 1 min window
+PUMP_MIN, PUMP_MAX = 5, 15  # production multiplier range
+
+
+def _cryptomon_hash(e):
+    t = 43758.5453 * math.sin(127.1 * e + 311.7)
+    return t - math.floor(t)
+
+
+def _pump_seed(mid):
+    try:
+        return int(str(mid)[-6:], 16)
+    except (ValueError, TypeError):
+        return 0
+
+
+def pump_status(mid):
+    """Return (is_pumping, next_pump_in_sec, pump_mult) for a cryptomon."""
+    i = _pump_seed(mid)
+    now = int(time.time() * 1000)
+    u = (now + i) // PUMP_CYCLE_MS
+    for _ in range(3):  # check current + next 2 cycles
+        c = int(_cryptomon_hash(i + 7 * u) * (PUMP_CYCLE_MS - PUMP_WINDOW_MS))
+        ws = u * PUMP_CYCLE_MS - i + c
+        we = ws + PUMP_WINDOW_MS
+        mult = PUMP_MIN + _cryptomon_hash(i + 7 * u + 1) * (PUMP_MAX - PUMP_MIN)
+        if ws <= now < we:
+            return True, 0, mult
+        if we > now:
+            return False, (ws - now) / 1000, mult
+        u += 1
+    return False, None, None
+
+
 def prod_per_hour(m):
     """Estimated LUMIS/hour for a monster at current vitals."""
     base = m.get('base_production_rate', 0)
@@ -160,6 +196,14 @@ class FarmEngine:
         vit = m.get('vitals', {})
         reserve = RUSH_RESERVE if rush else LUMIS_RESERVE
         food_thresh = RUSH_FOOD_BUY if rush else FOOD_BUY
+        # cryptomon pump awareness: boost vitals to max zone before pump window
+        is_pump_mon = (m.get('personality') or '').lower() == 'cryptomon'
+        if is_pump_mon:
+            pumping, next_in, mult = pump_status(mid)
+            if pumping:
+                self.log(acc, f'🔥 PUMP {m.get("name",mid)} ~{mult:.0f}x ACTIVE')
+            elif next_in is not None and next_in < 300:
+                food_thresh = FOOD_BUY  # force max zone before pump
         if m.get('is_sleeping'):
             r = api.sleep(mid, 'wake_up')
             if r.status_code == 200:
@@ -396,6 +440,13 @@ def render_account(st: AccState) -> Panel:
             name = m.get('name', '?')
             if m.get('is_sleeping'):
                 name += ' 💤'
+            # cryptomon pump indicator
+            if (m.get('personality') or '').lower() == 'cryptomon':
+                pumping, next_in, mult = pump_status(m['_id'])
+                if pumping:
+                    name += f' 🔥{mult:.0f}x'
+                elif next_in is not None and next_in < 600:
+                    name += f' ⏱{next_in/60:.0f}m'
             fb = vital_bar(vit.get('food', 0)); fb.append(f' {vit.get("food",0):.0f}', style='grey58')
             hb = vital_bar(vit.get('hygiene', 0)); hb.append(f' {vit.get("hygiene",0):.0f}', style='grey58')
             eb = vital_bar(vit.get('energy', 0)); eb.append(f' {vit.get("energy",0):.0f}', style='grey58')
