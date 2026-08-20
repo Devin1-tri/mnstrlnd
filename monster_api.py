@@ -158,11 +158,9 @@ class MonsterAPI:
         if not self.init:
             raise RuntimeError('failed to fetch initData')
         self.log(f'[{self.account.name}] initData ok ({len(self.init)} chars)')
-        self.log(f'[{self.account.name}] solving turnstile...')
         self.token = solve_turnstile()
         if not self.token:
             raise RuntimeError('failed to solve turnstile')
-        self.log(f'[{self.account.name}] turnstile ok ({len(self.token)} chars)')
         r = self.session.get(B + '/api/user?include=monsters', headers=self._headers({
             'x-app-signal': 'initialize', 'cf-turnstile-response': self.token}), timeout=25)
         if r.status_code != 200:

@@ -28,8 +28,8 @@ Akun terdaftar di `accounts.json` (auto-migrate dari setup lama saat pertama run
 
 **Tambah akun baru:**
 ```bash
-/home/ubuntu/bot/urkocoin/.venv/bin/python add_account.py <nama> <nomor_hp>
-# contoh: python add_account.py alt1 +62812xxxxxxx
+./.venv/bin/python add_account.py <nama> <nomor_hp>
+# contoh: ./.venv/bin/python add_account.py alt1 +62812xxxxxxx
 # -> masukin OTP (dan 2FA kalau aktif) -> session tersimpan di sessions/<nama>.session
 ```
 
@@ -58,6 +58,7 @@ python monster_live.py --accounts main,alt1
 5. **Egg pipeline** — hatch egg selesai → incubate egg owned → beli mystery egg (50k) kalau slot kosong + mampu
 6. **Chat XP** — 1 pesan/cycle/monster sampai cap 10/hari (+12 XP/pesan)
 7. **Wake** — bangunin monster tidur (mining stop saat tidur)
+8. **Smart Rush Mode** — akun dengan monster level < 3 otomatis masuk rush mode (reserve 500, food target 50, level-up lebih agresif). Begitu capai L3, auto switch balik normal mode. Akun yang udah ≥ L3 gak tersentuh.
 
 ## Dashboard
 
@@ -65,7 +66,7 @@ python monster_live.py --accounts main,alt1
 - Per akun: LUMIS, rank, streak, slots, produksi/jam, delta session
 - Per monster: level, personality, bar food/hygiene/energy, prod/jam, XP progress
 - Eggs: status incubation + sisa waktu
-- Activity log: 10 aksi terakhir
+- Activity log: 10 aksi terakhir (clean, tanpa spam auth)
 
 ## Formula (extracted dari JS, verified live)
 
@@ -88,8 +89,50 @@ python monster_live.py --accounts main,alt1
 | `sessions/` | Telethon session per akun |
 | `monster_daemon.py` | daemon lama (headless, tanpa dashboard) — superseded |
 
+## Troubleshooting
+
+### ❌ "failed to solve turnstile" — semua akun stuck re-auth
+
+**Penyebab:** Local Turnstile solver (port 8001) mati atau belum jalan. Bot butuh solver ini buat re-auth setiap 30 menit. Tanpa solver, semua akun gagal bootstrap dan dashboard tampil 0 LUMIS / ERROR.
+
+**Fix:**
+```bash
+# 1. Setup solver (sekali aja)
+cd /home/ubuntu/.hermes/skills/automation/global-captcha
+python3 -m venv .venv
+.venv/bin/pip install loguru fastapi uvicorn camoufox playwright Pillow
+.venv/bin/python -m camoufox fetch
+
+# 2. Start solver (background)
+screen -dmS captcha bash -c 'cd /home/ubuntu/.hermes/skills/automation/global-captcha && .venv/bin/python run_captcha_solver.py; exec bash'
+
+# 3. Verify solver live (harus return 200)
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/docs
+
+# 4. Restart monster bot
+screen -S monster -X quit
+cd /home/ubuntu/bot/monsterland
+screen -dmS monster -T xterm-256color bash -c './.venv/bin/python monster_live.py; exec bash'
+```
+
+Bot auto-recover di cycle berikutnya setelah solver live. **Solver harus tetap jalan** — kalau VPS reboot, start ulang solver dulu sebelum bot.
+
+### ❌ "No module named 'telethon'"
+
+**Penyebab:** Dependencies belum terinstall di venv.
+
+**Fix:**
+```bash
+cd /home/ubuntu/bot/monsterland
+pip install -r requirements.txt   # jangan lupa flag -r!
+```
+
+### ⚠️ Activity log penuh spam auth
+
+Log turnstile (`solving turnstile...`, `turnstile ok`) sudah dihilangkan dari code. Hanya error yang muncul. Kalau masih rame, restart bot biar patch aktif.
+
 ## Catatan
 
-- Turnstile solver lokal di `localhost:8001` harus jalan (dari skill global-captcha)
+- Turnstile solver lokal di `localhost:8001` **wajib jalan** (dari skill global-captcha). Lihat Troubleshooting di atas.
 - Slot 2 butuh 3 ads manual di app (gak bisa via API, dan kita gak fake ads)
 - Jangan share `accounts.json` / `sessions/` — itu credential penuh akun TG
