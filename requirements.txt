@@ -1,0 +1,5 @@
+# Monsterland farm bot dependencies
+# Install: uv venv && uv pip install -r requirements.txt   (or pip install -r requirements.txt)
+requests>=2.31
+telethon>=1.36
+rich>=13.7
