@@ -196,6 +196,11 @@ class FarmEngine:
         vit = m.get('vitals', {})
         reserve = RUSH_RESERVE if rush else LUMIS_RESERVE
         food_thresh = RUSH_FOOD_BUY if rush else FOOD_BUY
+        # EMERGENCY: if any vital is critical (<20), ignore reserve — a dying
+        # monster produces ~0, so survival spending always beats saving
+        critical = min(vit.get('food', 0), vit.get('hygiene', 0), vit.get('energy', 0)) < 20
+        if critical:
+            reserve = 0
         # cryptomon pump awareness: boost vitals to max zone before pump window
         is_pump_mon = (m.get('personality') or '').lower() == 'cryptomon'
         if is_pump_mon:
@@ -220,11 +225,11 @@ class FarmEngine:
             if not self._use_inv(api, mid, inv, 'energy', acc) and lumis > reserve:
                 ok, new_l = self._buy_cheapest(api, mid, EN_ITEMS, 'energy', acc)
                 if new_l is not None: lumis = new_l
-        # level up
+        # level up (skip if vitals critical — survival first)
         lvl = m.get('level', 1)
         base_rate = m.get('base_production_rate', 1549)
         cost = level_up_cost(lvl, base_rate)
-        if lumis >= cost + reserve:
+        if not critical and lumis >= cost + reserve:
             r = api.level_up(mid)
             if r.status_code == 200:
                 dd = r.json()
