@@ -1,138 +1,209 @@
-# Monsterland Farm Bot — Multi-Account + Dashboard
+# 🐾 Monsterland Farm Bot
 
-Bot farming LUMIS untuk Monsterland (Telegram Mini App). Multi-akun, dashboard Rich TUI, jalan manual di `screen`.
+Multi-account farming bot for **Monsterland** (Telegram Mini App). Auto-farms LUMIS tokens with a live Rich TUI dashboard, smart leveling, and full pet care automation.
 
-## Quick Start
+> **LUMIS** is the withdrawable in-game currency (1,000,000 LUMIS = $1, min withdrawal 500k).
+
+## ✨ Features
+
+- **Multi-account** — farm unlimited Telegram accounts in parallel, each with its own session
+- **Rich TUI dashboard** — live view of all accounts: LUMIS, rank, streak, pet vitals, production, XP, eggs
+- **Smart Rush Mode** — new accounts (monster level < 3) automatically enter aggressive leveling mode, then switch back to normal mode at L3+
+- **Full automation per cycle (default 4 min):**
+  - 🔄 Auth refresh (initData via Telethon WebView + Cloudflare Turnstile, re-auth every 30 min)
+  - 📅 Daily streak claim
+  - 🍎 Vitals maintenance (food/hygiene/energy kept in max-multiplier zone, inventory-first spending)
+  - ⬆️ Auto level-up when affordable
+  - 🥚 Egg pipeline (hatch → incubate → buy)
+  - 💬 Chat XP (10 messages/day per monster, +12 XP each)
+  - ⏰ Auto wake sleeping monsters
+
+## 📋 Requirements
+
+| Requirement | Details |
+|---|---|
+| OS | Linux (tested on Ubuntu 22.04+) |
+| Python | 3.11+ |
+| RAM | ~100 MB for the bot + **500 MB–1.5 GB for the Turnstile solver** (browser-based) |
+| Telegram API credentials | `api_id` + `api_hash` from https://my.telegram.org |
+| Turnstile solver | Any service exposing the HTTP interface below (see [Turnstile Solver](#-turnstile-solver-setup)) |
+| `screen` | For persistent background runs |
+
+### Python dependencies
+
+```
+requests>=2.31
+telethon>=1.36
+rich>=13.7
+```
+
+## 🚀 Setup
+
+### 1. Clone & create venv
 
 ```bash
-cd /home/ubuntu/bot/monsterland
+git clone https://github.com/Devin1-tri/mnstrlnd.git
+cd mnstrlnd
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
+### 2. Telegram credentials
+
+Create `~/.tg_cred.env`:
+
+```env
+TG_API_ID=12345678
+TG_API_HASH=your_api_hash_here
+TG_PHONE=+62812xxxxxxxx
+```
+
+Get `api_id`/`api_hash` from https://my.telegram.org → API development tools.
+
+### 3. Turnstile solver (see section below)
+
+### 4. Add your first account
+
+```bash
+./.venv/bin/python add_account.py main +62812xxxxxxxx
+# Enter the OTP code sent to your Telegram (type it in the terminal!)
+# If 2FA is enabled, enter your password too
+```
+
+This creates `sessions/main.session` and registers the account in `accounts.json`.
+
+### 5. Run
+
+```bash
 ./.venv/bin/python monster_live.py
 ```
 
-Setup pertama kali (atau kalau deps berubah):
+Or in a persistent screen session:
+
 ```bash
-cd /home/ubuntu/bot/monsterland
-uv venv --python 3.11 .venv
-uv pip install -r requirements.txt --python .venv/bin/python
+screen -dmS monster -T xterm-256color bash -c 'cd /path/to/mnstrlnd && ./.venv/bin/python monster_live.py; exec bash'
+screen -r monster    # view dashboard (detach: Ctrl+A then D)
 ```
 
-Jalankan di screen:
-```bash
-screen -dmS monster -T xterm-256color bash -c 'cd /home/ubuntu/bot/monsterland && ./.venv/bin/python monster_live.py; exec bash'
-screen -r monster        # lihat dashboard (detach: Ctrl+A D)
+## 🔐 Turnstile Solver Setup
+
+Monsterland's API requires a **Cloudflare Turnstile token** on every session bootstrap (initData TTL is short, so the bot re-authenticates every 30 minutes). The bot calls a local solver service and expects this HTTP interface:
+
+```
+GET http://localhost:8001/turnstile?url=<target_url>&sitekey=<sitekey>
+→ {"task_id": "uuid", "status": "accepted"}
+
+GET http://localhost:8001/result?id=<task_id>
+→ {"status": "success", "value": "<turnstile_token>"}   # poll until success/failure
 ```
 
-## Multi-Akun
+**Options:**
 
-Akun terdaftar di `accounts.json` (auto-migrate dari setup lama saat pertama run).
+1. **Self-hosted browser solver** (free) — a FastAPI service running a stealth browser pool (e.g. Camoufox/Playwright) that renders the Turnstile widget and extracts the token. Configure it to listen on `localhost:8001` with the endpoints above.
+2. **Paid solving services** — wrap 2Captcha/CapSolver in a tiny HTTP shim that exposes the same two endpoints. Monsterland's tokens are accepted cross-session, so external solvers work.
 
-**Tambah akun baru:**
+The solver URL is configurable via the `SOLVER` constant in `monster_api.py`.
+
+⚠️ **The solver must be running before you start the bot** — otherwise all accounts will show `failed to solve turnstile`.
+
+## 🎮 Usage
+
 ```bash
-./.venv/bin/python add_account.py <nama> <nomor_hp>
-# contoh: ./.venv/bin/python add_account.py alt1 +62812xxxxxxx
-# -> masukin OTP (dan 2FA kalau aktif) -> session tersimpan di sessions/<nama>.session
+./.venv/bin/python monster_live.py                     # farm all enabled accounts
+./.venv/bin/python monster_live.py --accounts main,alt1  # only specific accounts
+./.venv/bin/python monster_live.py --interval 300      # 5-minute cycles
+./.venv/bin/python monster_live.py --no-chat           # disable chat XP
+./.venv/bin/python monster_live.py --once              # single cycle (testing)
 ```
 
-**Pilih akun tertentu:**
+### Adding more accounts
+
 ```bash
-python monster_live.py --accounts main,alt1
+./.venv/bin/python add_account.py <name> <phone_number>
 ```
 
-**Disable akun:** edit `accounts.json`, set `"enabled": false`.
+Each account gets its own Telethon session. Restart the bot to pick up new accounts.
 
-## Opsi CLI
+> ⚠️ **Enter OTP codes in the terminal only.** Never paste Telegram OTP codes into chats — Telegram's anti-fraud may invalidate the login.
 
-| Flag | Fungsi |
+## 🧠 Smart Rush Mode
+
+Accounts are automatically managed based on their highest monster level:
+
+| Condition | Mode | Behavior |
+|---|---|---|
+| Max monster level **< 3** | 🔥 RUSH | Lower LUMIS reserve (500 vs 1000), lower food target (50 vs 80) — saves LUMIS for faster level-ups |
+| Max monster level **≥ 3** | ✅ NORMAL | Full vitals optimization, conservative reserve |
+
+The transition is automatic and per-account — established accounts are never affected by rush-mode logic.
+
+## 📊 Game Formulas (extracted from JS, verified live)
+
+```
+Production = baseRate × levelMult × foodMult × hygMult × energyMult × personalityBonus
+```
+
+| Vital | Multiplier thresholds |
 |---|---|
-| `--accounts a,b` | cuma farm akun tertentu |
-| `--interval 300` | cycle tiap N detik (default 240) |
-| `--no-chat` | matikan chat XP |
-| `--once` | 1 cycle lalu exit (buat test) |
+| Food | ≥80 → 1.25x · ≥50 → 1.0x · ≥20 → 0.5x · <20 → 0.01x |
+| Hygiene | ≥30 → 1.0x · else 0.5x |
+| Energy | ≥30 → 1.0x · ≥1 → 0.6x · else 0.01x |
 
-## Yang Diotomasi (per cycle, per akun)
+- **Level multiplier:** L1=1.0 → L10=2.6 → L25=8.9
+- **Personality bonus:** zoomer 1.5x, overlord 3.0x
+- **Decay rates:** food −20/h, hygiene −12.5/h, energy −16.67/h
+- **Level-up cost:** `floor(3 × baseRate × level^1.5)` LUMIS + XP requirement
+- **Chat XP:** +12 XP per message, capped at 10 messages/day
 
-1. **Auth** — initData fresh via Telethon WebView + Turnstile (re-auth tiap 30 menit, initData TTL pendek)
-2. **Streak** — claim daily streak otomatis
-3. **Vitals** — jaga food≥80, hyg≥30, energy≥30 (zona multiplier max). Pakai inventory dulu, baru beli item termurah
-4. **Level-up** — auto kalau LUMIS cukup (cost = `3 × baseRate × level^1.5`, reserve 1000)
-5. **Egg pipeline** — hatch egg selesai → incubate egg owned → beli mystery egg (50k) kalau slot kosong + mampu
-6. **Chat XP** — 1 pesan/cycle/monster sampai cap 10/hari (+12 XP/pesan)
-7. **Wake** — bangunin monster tidur (mining stop saat tidur)
-8. **Smart Rush Mode** — akun dengan monster level < 3 otomatis masuk rush mode (reserve 500, food target 50, level-up lebih agresif). Begitu capai L3, auto switch balik normal mode. Akun yang udah ≥ L3 gak tersentuh.
+## 📁 Files
 
-## Dashboard
-
-- Header: total LUMIS semua akun + estimasi $/jam + $/hari
-- Per akun: LUMIS, rank, streak, slots, produksi/jam, delta session
-- Per monster: level, personality, bar food/hygiene/energy, prod/jam, XP progress
-- Eggs: status incubation + sisa waktu
-- Activity log: 10 aksi terakhir (clean, tanpa spam auth)
-
-## Formula (extracted dari JS, verified live)
-
-- Produksi = `baseRate × levelMult × foodMult × hygMult × energyMult × personalityBonus`
-- Food: ≥80→1.25x, ≥50→1.0x, ≥20→0.5x, <20→0.01x
-- Hygiene: ≥30→1.0x, else 0.5x | Energy: ≥30→1.0x, ≥1→0.6x, else 0.01x
-- Level mult: L1=1.0 ... L10=2.6 ... L25=8.9
-- Zoomer personality: 1.5x produksi
-- Decay: food 20/jam, hyg 12.5/jam, energy 16.67/jam
-- 1M LUMIS = $1, min WD 500k
-
-## File
-
-| File | Fungsi |
+| File | Purpose |
 |---|---|
-| `monster_live.py` | **MAIN** — dashboard + engine multi-akun |
-| `monster_api.py` | API client + account registry |
-| `add_account.py` | login akun TG baru (OTP/2FA) |
-| `accounts.json` | daftar akun (chmod 600) |
-| `sessions/` | Telethon session per akun |
-| `monster_daemon.py` | daemon lama (headless, tanpa dashboard) — superseded |
+| `monster_live.py` | **Main** — TUI dashboard + multi-account farm engine |
+| `monster_api.py` | API client, auth, account registry |
+| `add_account.py` | Interactive Telegram login (OTP/2FA) |
+| `requirements.txt` | Python dependencies |
+| `accounts.json` | Account registry (auto-created, **never share**) |
+| `sessions/` | Telethon sessions per account (**never share**) |
 
-## Troubleshooting
+## 🔧 Troubleshooting
 
-### ❌ "failed to solve turnstile" — semua akun stuck re-auth
+### ❌ `failed to solve turnstile` — all accounts stuck
 
-**Penyebab:** Local Turnstile solver (port 8001) mati atau belum jalan. Bot butuh solver ini buat re-auth setiap 30 menit. Tanpa solver, semua akun gagal bootstrap dan dashboard tampil 0 LUMIS / ERROR.
+The Turnstile solver on port 8001 is down or unreachable. Start/verify it:
 
-**Fix:**
 ```bash
-# 1. Setup solver (sekali aja)
-cd /home/ubuntu/.hermes/skills/automation/global-captcha
-python3 -m venv .venv
-.venv/bin/pip install loguru fastapi uvicorn camoufox playwright Pillow
-.venv/bin/python -m camoufox fetch
-
-# 2. Start solver (background)
-screen -dmS captcha bash -c 'cd /home/ubuntu/.hermes/skills/automation/global-captcha && .venv/bin/python run_captcha_solver.py; exec bash'
-
-# 3. Verify solver live (harus return 200)
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/docs
-
-# 4. Restart monster bot
-screen -S monster -X quit
-cd /home/ubuntu/bot/monsterland
-screen -dmS monster -T xterm-256color bash -c './.venv/bin/python monster_live.py; exec bash'
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/docs   # expect 200
 ```
 
-Bot auto-recover di cycle berikutnya setelah solver live. **Solver harus tetap jalan** — kalau VPS reboot, start ulang solver dulu sebelum bot.
+The bot auto-recovers on the next cycle once the solver is back. After a VPS reboot, start the solver **before** the bot.
 
-### ❌ "No module named 'telethon'"
+### ❌ `No module named 'telethon'`
 
-**Penyebab:** Dependencies belum terinstall di venv.
+Dependencies not installed in the venv:
 
-**Fix:**
 ```bash
-cd /home/ubuntu/bot/monsterland
-pip install -r requirements.txt   # jangan lupa flag -r!
+.venv/bin/pip install -r requirements.txt   # don't forget the -r flag!
 ```
 
-### ⚠️ Activity log penuh spam auth
+### ❌ `pip install requirements.txt` → "No matching distribution"
 
-Log turnstile (`solving turnstile...`, `turnstile ok`) sudah dihilangkan dari code. Hanya error yang muncul. Kalau masih rame, restart bot biar patch aktif.
+Missing the `-r` flag — pip thinks you're installing a package literally named "requirements.txt". Use `pip install -r requirements.txt`.
 
-## Catatan
+### ⚠️ High RAM usage
 
-- Turnstile solver lokal di `localhost:8001` **wajib jalan** (dari skill global-captcha). Lihat Troubleshooting di atas.
-- Slot 2 butuh 3 ads manual di app (gak bisa via API, dan kita gak fake ads)
-- Jangan share `accounts.json` / `sessions/` — itu credential penuh akun TG
+The bot itself uses ~70–100 MB. Heavy RAM usage comes from the **solver's browser pool**. If self-hosting, keep the pool small (1–2 browser instances is enough for a handful of accounts — each solve takes ~4–15 s and re-auth only happens every 30 min per account).
+
+### ⚠️ Dashboard shows `Layout()` boxes with >2 accounts
+
+Fixed in current version (grid layout bug). Pull the latest code.
+
+## 🔒 Security Notes
+
+- `accounts.json`, `sessions/`, `initdata.txt`, and `~/.tg_cred.env` contain **full account credentials** — they are gitignored and must never be committed or shared
+- The bot only talks to Monsterland's official API and Telegram — no fake ad impressions, no event fabrication
+- Slot 2 monster unlocks require watching 3 ads **manually in the app** (no API path, and we don't fake ads)
+
+## ⚖️ Disclaimer
+
+This project is for educational purposes. Use at your own risk — automation may violate the game's Terms of Service and could result in account action. Not affiliated with Monsterland.
