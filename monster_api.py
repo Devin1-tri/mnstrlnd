@@ -195,6 +195,14 @@ class MonsterAPI:
     def level_up(self, monster_id):
         return self._post('/api/xp', {'action': 'level_up', 'monsterId': monster_id})
 
+    def ascend(self, monster_id):
+        """Turn a lifespan-expired miner into a Mentor (permanent XP buff source)."""
+        return self._post('/api/mentor/ascend', {'monsterId': monster_id})
+
+    def claim_egg_from_fragments(self, egg_type='mystery_egg'):
+        """5 fragments of a type -> 1 egg. body: {type}"""
+        return self._post('/api/eggs/claim-from-fragments', {'type': egg_type})
+
     def claim_streak(self):
         return self._post('/api/daily-streak', {'action': 'claim'})
 

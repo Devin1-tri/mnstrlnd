@@ -4,6 +4,7 @@ initdata.txt
 turnstile_token.txt
 sessions/
 *.session
+*.session-journal
 .env*
 
 # Python
@@ -22,3 +23,19 @@ Thumbs.db
 # Temp files
 /tmp/
 *.txt.bak
+
+# Reverse-engineering artifacts & local probes (not part of the bot)
+ad_*.py
+analyze_*.py
+probe_*.py
+fetch_init.py
+test_logic.py
+js/
+*.html
+*.js
+chunks.txt
+*.log
+*.bak.*
+state/
+logs/
+monster_daemon.py
