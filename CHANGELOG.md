@@ -2,3 +2,4 @@
 - 2026-08-25: routine maintenance pass #22 — docs refresh, lint cleanup
 - 2026-08-24: routine maintenance pass #23 — docs refresh, lint cleanup
 - 2026-08-23: routine maintenance pass #24 — docs refresh, lint cleanup
+- 2026-08-22: routine maintenance pass #25 — docs refresh, lint cleanup
